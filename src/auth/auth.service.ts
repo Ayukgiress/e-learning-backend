@@ -30,7 +30,7 @@ export class AuthService {
       userId: uuidv4(), // Generate a unique userId
     });
 
-    const token = this.jwtService.sign({ id: user._id });
+    const token = this.createToken(user._id.toString()); // Ensure user._id is a string
 
     return token; 
   }
@@ -50,9 +50,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const token = this.jwtService.sign({ id: user._id });
+    const token = this.createToken(user._id.toString()); // Ensure user._id is a string
 
     return token; 
+  }
+
+  createToken(userId: string): string {
+    return this.jwtService.sign({ id: userId }); // Token generation logic
   }
 
   async getCurrentUser(userId: string): Promise<CurrentUserDto> {
@@ -68,5 +72,21 @@ export class AuthService {
       userId: user.userId,
       role: user.role,
     };
+  }
+
+  async validateUserByGoogle(profile: any): Promise<string> {
+    let user: User | null = await this.userModel.findOne({ googleId: profile.id });
+
+    if (!user) {
+      user = await this.userModel.create({
+        firstName: profile.name.givenName,
+        lastName: profile.name.familyName,
+        email: profile.emails[0].value,
+        googleId: profile.id,
+        userId: uuidv4(),
+      });
+    }
+
+    return this.createToken(user._id.toString()); // Ensure user._id is a string
   }
 }
