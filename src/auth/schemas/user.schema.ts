@@ -9,20 +9,20 @@ export class User extends Document {
   @Prop({ required: true })
   lastName: string;
 
-  @Prop({ required: true, unique: true, lowercase: true }) // Ensure email is stored in lowercase
+  @Prop({ required: true, unique: true, lowercase: true }) 
   email: string;
 
   @Prop({ required: true })
   password: string;
 
   @Prop()
-  googleId?: string; // Optional field
+  googleId?: string; 
 
-  @Prop({ default: 'user' }) // Default role
+  @Prop({ default: 'user' }) 
   role?: string;
 
-  @Prop({ required: true, unique: true }) // Ensure to define the type
-  userId: string; // Adjust the type based on your application's needs
+  @Prop({ required: true, unique: true }) 
+  userId: string; 
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

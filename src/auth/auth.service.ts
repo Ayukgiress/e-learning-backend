@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { SignUpDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID for userId generation
+import { CurrentUserDto } from './dto/current-user.dto'; // Import the DTO for current user
 
 @Injectable()
 export class AuthService {
@@ -52,5 +53,20 @@ export class AuthService {
     const token = this.jwtService.sign({ id: user._id });
 
     return token; 
+  }
+
+  async getCurrentUser(userId: string): Promise<CurrentUserDto> {
+    const user = await this.userModel.findById(userId).select('-password'); // Exclude password from the response
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    return {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      userId: user.userId,
+      role: user.role,
+    };
   }
 }
