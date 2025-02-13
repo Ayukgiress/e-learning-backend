@@ -22,9 +22,9 @@ export class AuthController {
     return { token }; 
   }
 
-  @UseGuards(JwtAuthGuard) // Protect this route with JWT guard
-  @Get('/me') // Route to get the current user
+  @UseGuards(JwtAuthGuard) 
+  @Get('/me') 
   async getCurrentUser(@Request() req): Promise<CurrentUserDto> {
-    return this.authService.getCurrentUser(req.user.id); // Assuming req.user.id contains the user ID
+    return this.authService.getCurrentUser(req.user.id); 
   }
 }
