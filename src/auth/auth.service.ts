@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from './schemas/user.schema';
@@ -8,6 +8,7 @@ import { SignUpDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { v4 as uuidv4 } from 'uuid'; 
 import { CurrentUserDto } from './dto/current-user.dto'; 
+import { EmailService } from './email.service'; 
 
 @Injectable()
 export class AuthService {
@@ -15,6 +16,7 @@ export class AuthService {
     @InjectModel(User.name)
     private userModel: Model<User>,
     private jwtService: JwtService,
+    private emailService: EmailService, 
   ) {}
 
   async signUp(signUpDto: SignUpDto): Promise<string> {
@@ -30,7 +32,7 @@ export class AuthService {
       userId: uuidv4(), // Generate a unique userId
     });
 
-    const token = this.createToken(user._id.toString()); // Ensure user._id is a string
+    const token = this.createToken(user._id.toString()); 
 
     return token; 
   }
@@ -50,13 +52,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const token = this.createToken(user._id.toString()); // Ensure user._id is a string
+    const token = this.createToken(user._id.toString()); 
 
     return token; 
   }
 
   createToken(userId: string): string {
-    return this.jwtService.sign({ id: userId }); // Token generation logic
+    return this.jwtService.sign({ id: userId }); 
   }
 
   async getCurrentUser(userId: string): Promise<CurrentUserDto> {
@@ -87,6 +89,43 @@ export class AuthService {
       });
     }
 
-    return this.createToken(user._id.toString()); // Ensure user._id is a string
+    return this.createToken(user._id.toString()); 
+  }
+
+  
+
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.userModel.findOne({ email });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const token = this.jwtService.sign({ id: user._id }, { expiresIn: '1h' }); 
+    const resetLink = `http://your-frontend.com/reset-password?token=${token}`;
+
+    
+    await this.emailService.sendEmail({
+      to: email,
+      subject: 'Password Reset',
+      text: `You requested a password reset. Click the link to reset your password: ${resetLink}`,
+    });
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const payload = this.jwtService.verify(token); 
+
+    if (!payload) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    const user = await this.userModel.findById(payload.id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword; 
+    await user.save();
   }
 }

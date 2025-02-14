@@ -9,6 +9,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { GoogleStrategy } from './ google.strategy'; 
 import { UserSchema } from './schemas/user.schema';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { EmailService } from './email.service'; 
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
     MongooseModule.forFeature([{ name: 'User', schema: UserSchema }]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, JwtAuthGuard],
+  providers: [AuthService, JwtStrategy, GoogleStrategy, JwtAuthGuard, EmailService], 
   exports: [JwtStrategy, PassportModule],
 })
 export class AuthModule {}

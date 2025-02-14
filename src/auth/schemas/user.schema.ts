@@ -5,7 +5,7 @@ export type UserDocument = HydratedDocument<User>;
 
 @Schema({ collection: 'users' })
 export class User {
-  _id: Types.ObjectId;  // Add this line
+  _id: Types.ObjectId; 
 
   @Prop({ required: true })
   firstName: string;
@@ -13,19 +13,19 @@ export class User {
   @Prop({ required: true })
   lastName: string;
 
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true, unique: true }) // Ensure unique email addresses
   email: string;
 
-  @Prop()
+  @Prop() // Password is optional for cases like social login
   password?: string;
 
   @Prop({ required: true })
-  userId: string;
+  userId: string; // Unique identifier for the user
 
-  @Prop()
+  @Prop() 
   googleId?: string;
 
-  @Prop({ default: 'user' })
+  @Prop({ default: 'user' }) // Default role for new users
   role: string;
 }
 

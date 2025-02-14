@@ -31,18 +31,34 @@ export class AuthController {
   }
 
   // Google OAuth routes
-
   @Get('google')
   @UseGuards(AuthGuard('google'))
   async googleAuth(@Request() req) {
-    // Initiates the Google authentication process
+    
   }
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(@Request() req, @Res() res: Response) {
-    const user = req.user; // User returned from Google
-    const token = this.authService.createToken(user); // Implement createToken in AuthService
-    res.redirect(`http://yourfrontend.com?token=${token}`); // Redirect with token
+    const user = req.user; 
+    const token = this.authService.createToken(user._id.toString()); 
+    res.redirect(`http://yourfrontend.com?token=${token}`); 
+  }
+
+
+
+  @Post('/forgot-password')
+  async forgotPassword(@Body('email') email: string): Promise<{ message: string }> {
+    await this.authService.forgotPassword(email);
+    return { message: 'Password reset email sent.' };
+  }
+
+  @Post('/reset-password')
+  async resetPassword(
+    @Body('token') token: string,
+    @Body('newPassword') newPassword: string
+  ): Promise<{ message: string }> {
+    await this.authService.resetPassword(token, newPassword);
+    return { message: 'Password successfully reset.' };
   }
 }
