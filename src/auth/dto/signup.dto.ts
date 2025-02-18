@@ -23,6 +23,8 @@ export class SignUpDto {
   readonly googleId?: string;
 
   @IsOptional()
-  @IsEnum(['admin', 'instructor', 'student', 'guest'], { message: 'Role must be one of the following: admin, instructor, student, guest' })
-  readonly role?: 'admin' | 'instructor' | 'student' | 'guest';
+  @IsEnum(['admin', 'instructor', 'student', 'guest'], {
+    message: 'Role must be one of the following: admin, instructor, student, guest',
+  })
+  readonly role?: 'admin' | 'instructor' | 'student' | 'guest'; 
 }

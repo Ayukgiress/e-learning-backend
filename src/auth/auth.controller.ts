@@ -1,4 +1,4 @@
-import { Body, Controller, Post, HttpCode, HttpStatus, UseGuards, Get, Request, Res } from '@nestjs/common';
+import { Body, Controller, Post, HttpCode, HttpStatus, UseGuards, Get, Request, Res, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { SignUpDto } from './dto/signup.dto';
@@ -12,9 +12,9 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('/signup')
-  async signUp(@Body() signUpDto: SignUpDto): Promise<{ token: string }> {
-    const token = await this.authService.signUp(signUpDto);
-    return { token }; 
+  async signUp(@Body() signUpDto: SignUpDto): Promise<{ message: string }> {
+    await this.authService.signUp(signUpDto);
+    return { message: 'Registration successful! Please check your email to verify your account.' }; 
   }
 
   @Post('/login')
@@ -34,7 +34,7 @@ export class AuthController {
   @Get('google')
   @UseGuards(AuthGuard('google'))
   async googleAuth(@Request() req) {
-    
+    // Initiates the Google OAuth flow
   }
 
   @Get('google/callback')
@@ -42,10 +42,8 @@ export class AuthController {
   async googleAuthRedirect(@Request() req, @Res() res: Response) {
     const user = req.user; 
     const token = this.authService.createToken(user._id.toString()); 
-    res.redirect(`http://yourfrontend.com?token=${token}`); 
+    res.redirect(`http://frontend.com?token=${token}`); 
   }
-
-
 
   @Post('/forgot-password')
   async forgotPassword(@Body('email') email: string): Promise<{ message: string }> {
@@ -60,5 +58,12 @@ export class AuthController {
   ): Promise<{ message: string }> {
     await this.authService.resetPassword(token, newPassword);
     return { message: 'Password successfully reset.' };
+  }
+
+  // New route for email verification
+  @Get('/verify-email')
+  async verifyEmail(@Query('token') token: string): Promise<{ message: string }> {
+    await this.authService.verifyEmail(token);
+    return { message: 'Email verified successfully! You can now log in.' };
   }
 }

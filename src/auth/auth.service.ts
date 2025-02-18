@@ -19,10 +19,11 @@ export class AuthService {
     private emailService: EmailService, 
   ) {}
 
-  async signUp(signUpDto: SignUpDto): Promise<string> {
+  async signUp(signUpDto: SignUpDto): Promise<void> {
     const { firstName, lastName, email, password } = signUpDto;
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const verificationToken = uuidv4(); // Generate a unique verification token
 
     const user = await this.userModel.create({
       firstName,
@@ -30,11 +31,17 @@ export class AuthService {
       email,
       password: hashedPassword,
       userId: uuidv4(), // Generate a unique userId
+      emailVerificationToken: verificationToken, // Store the token
+      isEmailVerified: false, 
     });
 
-    const token = this.createToken(user._id.toString()); 
-
-    return token; 
+    const verificationLink = `http://frontend.com/verify-email?token=${verificationToken}`;
+    
+    await this.emailService.sendEmail({
+      to: email,
+      subject: 'Email Verification',
+      text: `Please verify your email by clicking on the following link: ${verificationLink}`,
+    });
   }
 
   async login(loginDto: LoginDto): Promise<string> {
@@ -44,6 +51,10 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Email not verified');
     }
 
     const isPasswordMatched = await bcrypt.compare(password, user.password);
@@ -92,8 +103,6 @@ export class AuthService {
     return this.createToken(user._id.toString()); 
   }
 
-  
-
   async forgotPassword(email: string): Promise<void> {
     const user = await this.userModel.findOne({ email });
 
@@ -102,9 +111,8 @@ export class AuthService {
     }
 
     const token = this.jwtService.sign({ id: user._id }, { expiresIn: '1h' }); 
-    const resetLink = `http://your-frontend.com/reset-password?token=${token}`;
+    const resetLink = `http://frontend.com/reset-password?token=${token}`;
 
-    
     await this.emailService.sendEmail({
       to: email,
       subject: 'Password Reset',
@@ -126,6 +134,18 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword; 
+    await user.save();
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const user = await this.userModel.findOne({ emailVerificationToken: token });
+
+    if (!user) {
+      throw new NotFoundException('Invalid or expired token');
+    }
+
+    user.isEmailVerified = true; // Update verification status
+    user.emailVerificationToken = undefined; // Clear the token
     await user.save();
   }
 }
