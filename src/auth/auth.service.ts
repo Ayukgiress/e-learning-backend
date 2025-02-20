@@ -9,6 +9,7 @@ import { LoginDto } from './dto/login.dto';
 import { v4 as uuidv4 } from 'uuid'; 
 import { CurrentUserDto } from './dto/current-user.dto'; 
 import { EmailService } from './email.service'; 
+import { ChangePasswordDto } from './dto/change-password.dto'; 
 
 @Injectable()
 export class AuthService {
@@ -53,10 +54,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // if (!user.isEmailVerified) {
-    //   throw new UnauthorizedException('Email not verified');
-    // }
-
     const isPasswordMatched = await bcrypt.compare(password, user.password);
 
     if (!isPasswordMatched) {
@@ -64,7 +61,6 @@ export class AuthService {
     }
 
     const token = this.createToken(user._id.toString()); 
-
     return token; 
   }
 
@@ -146,6 +142,24 @@ export class AuthService {
 
     user.isEmailVerified = true; // Update verification status
     user.emailVerificationToken = undefined; // Clear the token
+    await user.save();
+  }
+
+  async changePassword(userId: string, changePasswordDto: ChangePasswordDto): Promise<void> {
+    const { currentPassword, newPassword } = changePasswordDto;
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isPasswordMatched = await bcrypt.compare(currentPassword, user.password);
+    if (!isPasswordMatched) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedNewPassword;
     await user.save();
   }
 }
