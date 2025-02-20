@@ -42,7 +42,7 @@ export class AuthController {
   async googleAuthRedirect(@Request() req, @Res() res: Response) {
     const user = req.user; 
     const token = this.authService.createToken(user._id.toString()); 
-    res.redirect(`http://frontend.com?token=${token}`); 
+    res.redirect(`http://localhost:3000?token=${token}`); 
   }
 
   @Post('/forgot-password')

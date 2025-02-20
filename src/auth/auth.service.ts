@@ -35,7 +35,7 @@ export class AuthService {
       isEmailVerified: false, 
     });
 
-    const verificationLink = `http://frontend.com/verify-email?token=${verificationToken}`;
+    const verificationLink = `http://localhost:3000/verify-email?token=${verificationToken}`;
     
     await this.emailService.sendEmail({
       to: email,
@@ -53,9 +53,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    if (!user.isEmailVerified) {
-      throw new UnauthorizedException('Email not verified');
-    }
+    // if (!user.isEmailVerified) {
+    //   throw new UnauthorizedException('Email not verified');
+    // }
 
     const isPasswordMatched = await bcrypt.compare(password, user.password);
 
@@ -111,7 +111,7 @@ export class AuthService {
     }
 
     const token = this.jwtService.sign({ id: user._id }, { expiresIn: '1h' }); 
-    const resetLink = `http://frontend.com/reset-password?token=${token}`;
+    const resetLink = `http://localhost:3000/reset-password?token=${token}`;
 
     await this.emailService.sendEmail({
       to: email,
