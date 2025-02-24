@@ -21,7 +21,7 @@ export class AuthService {
   ) {}
 
   async signUp(signUpDto: SignUpDto): Promise<void> {
-    const { firstName, lastName, email, password } = signUpDto;
+    const { firstName, lastName, email, password, role } = signUpDto; // Include role in destructuring
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = uuidv4(); // Generate a unique verification token
@@ -33,7 +33,8 @@ export class AuthService {
       password: hashedPassword,
       userId: uuidv4(), // Generate a unique userId
       emailVerificationToken: verificationToken, // Store the token
-      isEmailVerified: false, 
+      isEmailVerified: false,
+      role: role || 'student', // Set default role if not provided
     });
 
     const verificationLink = `http://localhost:3000/verify-email?token=${verificationToken}`;
@@ -79,7 +80,7 @@ export class AuthService {
       lastName: user.lastName,
       email: user.email,
       userId: user.userId,
-      role: user.role,
+      role: user.role, // Include user role in the response
     };
   }
 
@@ -93,6 +94,7 @@ export class AuthService {
         email: profile.emails[0].value,
         googleId: profile.id,
         userId: uuidv4(),
+        role: 'student', // Default role for Google users
       });
     }
 
