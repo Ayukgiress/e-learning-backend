@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from './schemas/user.schema';
@@ -8,6 +8,8 @@ import { SignUpDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { v4 as uuidv4 } from 'uuid'; 
 import { CurrentUserDto } from './dto/current-user.dto'; 
+import { EmailService } from './email.service'; 
+import { ChangePasswordDto } from './dto/change-password.dto'; 
 
 @Injectable()
 export class AuthService {
@@ -15,12 +17,14 @@ export class AuthService {
     @InjectModel(User.name)
     private userModel: Model<User>,
     private jwtService: JwtService,
+    private emailService: EmailService, 
   ) {}
 
-  async signUp(signUpDto: SignUpDto): Promise<string> {
-    const { firstName, lastName, email, password } = signUpDto;
+  async signUp(signUpDto: SignUpDto): Promise<void> {
+    const { firstName, lastName, email, password, role } = signUpDto; // Include role in destructuring
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const verificationToken = uuidv4(); // Generate a unique verification token
 
     const user = await this.userModel.create({
       firstName,
@@ -28,11 +32,18 @@ export class AuthService {
       email,
       password: hashedPassword,
       userId: uuidv4(), // Generate a unique userId
+      emailVerificationToken: verificationToken, // Store the token
+      isEmailVerified: false,
+      role: role || 'student', // Set default role if not provided
     });
 
-    const token = this.createToken(user._id.toString()); // Ensure user._id is a string
-
-    return token; 
+    const verificationLink = `http://localhost:3000/verify-email?token=${verificationToken}`;
+    
+    await this.emailService.sendEmail({
+      to: email,
+      subject: 'Email Verification',
+      text: `Please verify your email by clicking on the following link: ${verificationLink}`,
+    });
   }
 
   async login(loginDto: LoginDto): Promise<string> {
@@ -50,13 +61,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const token = this.createToken(user._id.toString()); // Ensure user._id is a string
-
+    const token = this.createToken(user._id.toString()); 
     return token; 
   }
 
   createToken(userId: string): string {
-    return this.jwtService.sign({ id: userId }); // Token generation logic
+    return this.jwtService.sign({ id: userId }); 
   }
 
   async getCurrentUser(userId: string): Promise<CurrentUserDto> {
@@ -70,7 +80,7 @@ export class AuthService {
       lastName: user.lastName,
       email: user.email,
       userId: user.userId,
-      role: user.role,
+      role: user.role, // Include user role in the response
     };
   }
 
@@ -84,9 +94,74 @@ export class AuthService {
         email: profile.emails[0].value,
         googleId: profile.id,
         userId: uuidv4(),
+        role: 'student', // Default role for Google users
       });
     }
 
-    return this.createToken(user._id.toString()); // Ensure user._id is a string
+    return this.createToken(user._id.toString()); 
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.userModel.findOne({ email });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const token = this.jwtService.sign({ id: user._id }, { expiresIn: '1h' }); 
+    const resetLink = `http://localhost:3000/reset-password?token=${token}`;
+
+    await this.emailService.sendEmail({
+      to: email,
+      subject: 'Password Reset',
+      text: `You requested a password reset. Click the link to reset your password: ${resetLink}`,
+    });
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const payload = this.jwtService.verify(token); 
+
+    if (!payload) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    const user = await this.userModel.findById(payload.id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword; 
+    await user.save();
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const user = await this.userModel.findOne({ emailVerificationToken: token });
+
+    if (!user) {
+      throw new NotFoundException('Invalid or expired token');
+    }
+
+    user.isEmailVerified = true; // Update verification status
+    user.emailVerificationToken = undefined; // Clear the token
+    await user.save();
+  }
+
+  async changePassword(userId: string, changePasswordDto: ChangePasswordDto): Promise<void> {
+    const { currentPassword, newPassword } = changePasswordDto;
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isPasswordMatched = await bcrypt.compare(currentPassword, user.password);
+    if (!isPasswordMatched) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedNewPassword;
+    await user.save();
   }
 }
