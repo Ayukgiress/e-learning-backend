@@ -15,7 +15,7 @@ export class SignUpDto {
 
   @IsNotEmpty()
   @IsString()
-  @MinLength(6)
+  @MinLength(6, { message: 'Password must be at least 6 characters long' })
   readonly password: string;
 
   @IsOptional()
@@ -23,6 +23,8 @@ export class SignUpDto {
   readonly googleId?: string;
 
   @IsOptional()
-  @IsEnum(['admin', 'instructor', 'student', 'guest'], { message: 'Role must be one of the following: admin, instructor, student, guest' })
-  readonly role?: 'admin' | 'instructor' | 'student' | 'guest';
+  @IsEnum(['admin', 'instructor', 'student', 'guest'], {
+    message: 'Role must be one of the following: admin, instructor, student, guest',
+  })
+  readonly role?: 'admin' | 'instructor' | 'student' | 'guest'; 
 }
