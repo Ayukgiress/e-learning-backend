@@ -10,22 +10,25 @@ export class User {
   @Prop({ required: true })
   firstName: string;
 
-  @Prop({ required: true })
+  @Prop({ required: function() {
+    // Make lastName required only if not using social login
+    return !this.googleId; 
+  }})
   lastName: string;
 
-  @Prop({ required: true, unique: true }) // Ensure unique email addresses
+  @Prop({ required: true, unique: true })
   email: string;
 
   @Prop() // Password is optional for cases like social login
   password?: string;
 
   @Prop({ required: true })
-  userId: string; // Unique identifier for the user
+  userId: string;
 
   @Prop() 
   googleId?: string;
 
-  @Prop({ default: 'user' }) // Default role for new users
+  @Prop({ default: 'user' })
   role: string;
 
   @Prop({ default: false }) 
