@@ -21,20 +21,20 @@ export class AuthService {
   ) {}
 
   async signUp(signUpDto: SignUpDto): Promise<void> {
-    const { firstName, lastName, email, password, role } = signUpDto; // Include role in destructuring
+    const { firstName, lastName, email, password, role } = signUpDto;
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const verificationToken = uuidv4(); // Generate a unique verification token
+    const verificationToken = uuidv4();
 
     const user = await this.userModel.create({
       firstName,
       lastName,
       email,
       password: hashedPassword,
-      userId: uuidv4(), // Generate a unique userId
-      emailVerificationToken: verificationToken, // Store the token
+      userId: uuidv4(),
+      emailVerificationToken: verificationToken,
       isEmailVerified: false,
-      role: role || 'student', // Set default role if not provided
+      role: role,
     });
 
     const verificationLink = `http://localhost:3000/verify-email?token=${verificationToken}`;
@@ -66,7 +66,7 @@ export class AuthService {
   }
 
   createToken(userId: string): string {
-    return this.jwtService.sign({ id: userId }); 
+    return this.jwtService.sign({ id: userId }, { expiresIn: '24h' }); 
   }
 
   async getCurrentUser(userId: string): Promise<CurrentUserDto> {
@@ -80,25 +80,81 @@ export class AuthService {
       lastName: user.lastName,
       email: user.email,
       userId: user.userId,
-      role: user.role, // Include user role in the response
+      role: user.role,
     };
   }
 
   async validateUserByGoogle(profile: any): Promise<string> {
-    let user: User | null = await this.userModel.findOne({ googleId: profile.id });
-
-    if (!user) {
-      user = await this.userModel.create({
-        firstName: profile.name.givenName,
-        lastName: profile.name.familyName,
-        email: profile.emails[0].value,
-        googleId: profile.id,
-        userId: uuidv4(),
-        role: 'student', // Default role for Google users
-      });
+    try {
+      console.log('VALIDATING GOOGLE USER...');
+      
+      let user: User | null = await this.userModel.findOne({ googleId: profile.id });
+      
+      if (!user) {
+        let email: string | null = null;
+        
+        if (profile.emails && profile.emails.length > 0) {
+          email = profile.emails[0].value;
+          console.log('Found email in emails array:', email);
+        } 
+        else if (profile._json && profile._json.email) {
+          email = profile._json.email;
+          console.log('Found email in _json:', email);
+        }
+        else if (profile.email) {
+          email = profile.email;
+          console.log('Found email in direct property:', email);
+        }
+        else {
+          for (const key in profile) {
+            if (typeof profile[key] === 'string' && key.toLowerCase().includes('email')) {
+              email = profile[key];
+              console.log(`Found email in property ${key}:`, email);
+              break;
+            }
+          }
+        }
+        
+        if (!email) {
+          console.error('No email found in profile, using placeholder');
+          // Option 1: Use a placeholder email based on ID (not ideal, but prevents errors)
+          email = `google_user_${profile.id}@placeholder.com`;
+          // Option 2: Or throw an error if you prefer
+          // throw new UnauthorizedException('Email is required for Google authentication');
+        }
+        
+        // Extract name information with defaults
+        const firstName = profile.name?.givenName || profile._json?.given_name || 'Google';
+        const lastName = profile.name?.familyName || profile._json?.family_name || 'User';
+        
+        console.log('Creating user with:', { firstName, lastName, email, googleId: profile.id });
+        
+        user = await this.userModel.create({
+          firstName,
+          lastName,
+          email,
+          googleId: profile.id,
+          userId: uuidv4(),
+          role: 'student',
+          isEmailVerified: true,
+        });
+        
+        if (user) {
+          console.log('User created successfully:', user.email);
+        }
+      } else {
+        console.log('Found existing Google user:', user.email);
+      }
+      
+      if (user) {
+        return this.createToken(user._id.toString());
+      } else {
+        throw new UnauthorizedException('User not found');
+      }
+    } catch (error) {
+      console.error('Error in validateUserByGoogle:', error);
+      throw error;
     }
-
-    return this.createToken(user._id.toString()); 
   }
 
   async forgotPassword(email: string): Promise<void> {
@@ -108,7 +164,8 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    const token = this.jwtService.sign({ id: user._id }, { expiresIn: '1h' }); 
+    // This is already correct, using proper expiresIn format
+    const token = this.jwtService.sign({ id: user._id }, { expiresIn: 3600 });
     const resetLink = `http://localhost:3000/reset-password?token=${token}`;
 
     await this.emailService.sendEmail({
@@ -142,8 +199,8 @@ export class AuthService {
       throw new NotFoundException('Invalid or expired token');
     }
 
-    user.isEmailVerified = true; // Update verification status
-    user.emailVerificationToken = undefined; // Clear the token
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
     await user.save();
   }
 
