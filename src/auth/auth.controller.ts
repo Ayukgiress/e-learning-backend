@@ -1,12 +1,25 @@
-import { Body, Controller, Post, HttpCode, HttpStatus, UseGuards, Get, Request, Res, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Get,
+  Request,
+  Res,
+  Query,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { SignUpDto } from './dto/signup.dto';
-import { JwtAuthGuard } from './jwt-auth.guard'; 
-import { CurrentUserDto } from './dto/current-user.dto'; 
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { CurrentUserDto } from './dto/current-user.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Response } from 'express';
-import { ChangePasswordDto } from './dto/change-password.dto'; 
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -14,9 +27,35 @@ export class AuthController {
 
   // Public route for user registration
   @Post('/signup')
-  async signUp(@Body() signUpDto: SignUpDto): Promise<{ message: string }> {
-    await this.authService.signUp(signUpDto);
-    return { message: 'Registration successful! Please check your email to verify your account.' }; 
+  async signUp(@Body() signUpDto: SignUpDto): Promise<{ message: string; token: string }> {
+    try {
+      const existingUser = await this.authService.findUserByEmail(signUpDto.email);
+      if (existingUser) {
+        try {
+          const token = await this.authService.login({
+            email: signUpDto.email,
+            password: signUpDto.password,
+          });
+          return { message: 'User already exists, logged in successfully.', token };
+        } catch (error) {
+          throw new UnauthorizedException('User with this email already exists but provided password is incorrect');
+        }
+      }
+      return await this.authService.signUp(signUpDto);
+    } catch (error) {
+      if (error.code === 11000 && error.keyPattern && error.keyPattern.email) {
+        try {
+          const token = await this.authService.login({
+            email: signUpDto.email,
+            password: signUpDto.password,
+          });
+          return { message: 'User already exists, logged in successfully.', token };
+        } catch (loginError) {
+          throw new UnauthorizedException('User with this email already exists but provided password is incorrect');
+        }
+      }
+      throw error;
+    }
   }
 
   // Public route for user login
@@ -24,14 +63,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto): Promise<{ token: string }> {
     const token = await this.authService.login(loginDto);
-    return { token }; 
+    return { token };
   }
 
   // Protected route to get current user information
-  @UseGuards(JwtAuthGuard) 
-  @Get('/me') 
+  @UseGuards(JwtAuthGuard)
+  @Get('/me')
   async getCurrentUser(@Request() req): Promise<CurrentUserDto> {
-    return this.authService.getCurrentUser(req.user.id); 
+    return this.authService.getCurrentUser(req.user.id);
   }
 
   // Google OAuth routes (public)
@@ -44,9 +83,13 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(@Request() req, @Res() res: Response) {
+    console.log('Request User:', req.user); // Log req.user for debugging
     const user = req.user; 
-    const token = this.authService.createToken(user._id.toString()); 
-    res.redirect(`http://localhost:3000?token=${token}`); 
+    if (!user) {
+      throw new InternalServerErrorException('User authentication failed');
+    }
+    const token = this.authService.createToken(user._id.toString());
+    res.redirect(`http://localhost:3000?token=${token}`);
   }
 
   // Public route to request password reset
@@ -60,7 +103,7 @@ export class AuthController {
   @Post('/reset-password')
   async resetPassword(
     @Body('token') token: string,
-    @Body('newPassword') newPassword: string
+    @Body('newPassword') newPassword: string,
   ): Promise<{ message: string }> {
     await this.authService.resetPassword(token, newPassword);
     return { message: 'Password successfully reset.' };
@@ -74,7 +117,7 @@ export class AuthController {
   }
 
   // Protected route for changing password
-  @UseGuards(JwtAuthGuard) 
+  @UseGuards(JwtAuthGuard)
   @Post('/change-password')
   async changePassword(
     @Request() req,
