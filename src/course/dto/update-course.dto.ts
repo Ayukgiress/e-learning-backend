@@ -1,9 +1,14 @@
-import { IsNotEmpty, IsString, IsArray, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, IsArray, IsOptional, IsObject } from 'class-validator';
 
 export class UpdateCourseDto {
   @IsOptional()
   @IsString()
   readonly title?: string;
+
+  // Use IsOptional and IsObject to validate the course image
+  @IsOptional()
+  @IsObject() // Ensures that courseImage is an object
+  readonly courseImage?: Express.Multer.File;
 
   @IsOptional()
   @IsString()

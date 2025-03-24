@@ -61,13 +61,26 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const token = this.createToken(user._id.toString()); 
+    const token = await this.createToken(user._id.toString()); 
     return token; 
   }
 
-  createToken(userId: string): string {
-    return this.jwtService.sign({ id: userId }, { expiresIn: '24h' }); 
+ async createToken(userId: string): Promise<string> {
+  const user = await this.userModel.findById(userId);
+  if (!user) {
+    throw new UnauthorizedException('User not found');
   }
+
+  console.log("Creating token with role:", user.role);
+  
+  return this.jwtService.sign(
+    { 
+      id: userId,
+      role: user.role 
+    }, 
+    { expiresIn: '24h' }
+  );
+}
 
   async getCurrentUser(userId: string): Promise<CurrentUserDto> {
     const user = await this.userModel.findById(userId).select('-password'); 
@@ -117,13 +130,9 @@ export class AuthService {
         
         if (!email) {
           console.error('No email found in profile, using placeholder');
-          // Option 1: Use a placeholder email based on ID (not ideal, but prevents errors)
           email = `google_user_${profile.id}@placeholder.com`;
-          // Option 2: Or throw an error if you prefer
-          // throw new UnauthorizedException('Email is required for Google authentication');
         }
         
-        // Extract name information with defaults
         const firstName = profile.name?.givenName || profile._json?.given_name || 'Google';
         const lastName = profile.name?.familyName || profile._json?.family_name || 'User';
         
@@ -157,6 +166,103 @@ export class AuthService {
     }
   }
 
+  async validateUserByGoogleAndGetRoleInfo(profile: any): Promise<{ token: string, needsRoleSelection: boolean }> {
+    try {
+      console.log('VALIDATING GOOGLE USER WITH ROLE INFO...');
+      
+      let user: User | null = await this.userModel.findOne({ googleId: profile.id });
+      let needsRoleSelection = false;
+      
+      if (!user) {
+        let email: string | null = null;
+        
+        if (profile.emails && profile.emails.length > 0) {
+          email = profile.emails[0].value;
+        } 
+        else if (profile._json && profile._json.email) {
+          email = profile._json.email;
+        }
+        else if (profile.email) {
+          email = profile.email;
+        }
+        else {
+          for (const key in profile) {
+            if (typeof profile[key] === 'string' && key.toLowerCase().includes('email')) {
+              email = profile[key];
+              break;
+            }
+          }
+        }
+        
+        if (!email) {
+          email = `google_user_${profile.id}@placeholder.com`;
+        }
+        
+        // Extract name information with defaults
+        const firstName = profile.name?.givenName || profile._json?.given_name || 'Google';
+        const lastName = profile.name?.familyName || profile._json?.family_name || 'User';
+        
+        console.log('Creating user with:', { firstName, lastName, email, googleId: profile.id });
+        
+        needsRoleSelection = true;
+        
+        user = await this.userModel.create({
+          firstName,
+          lastName,
+          email,
+          googleId: profile.id,
+          userId: uuidv4(),
+          role: null, 
+          isEmailVerified: true,
+        });
+      } else {
+        // Check if existing user has a role
+        needsRoleSelection = !user.role;
+        console.log('Found existing Google user:', user.email, 'needsRoleSelection:', needsRoleSelection);
+      }
+      
+      if (user) {
+        return {
+          token: await this.createToken(user._id.toString()),
+          needsRoleSelection
+        };
+      } else {
+        throw new UnauthorizedException('User not found');
+      }
+    } catch (error) {
+      console.error('Error in validateUserByGoogleAndGetRoleInfo:', error);
+      throw error;
+    }
+  }
+
+  async updateRole(userId: string, role: string): Promise<{ token: string, message: string }> {
+    try {
+      const user = await this.userModel.findById(userId);
+      
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      
+      const validRoles = ['student', 'instructor', 'admin'];
+      if (!validRoles.includes(role)) {
+        throw new UnauthorizedException('Invalid role');
+      }
+      
+      user.role = role;
+      await user.save();
+      
+      const newToken = await this.createToken(user._id.toString());
+      
+      return { 
+        token: newToken,
+        message: `Role updated to ${role} successfully` 
+      };
+    } catch (error) {
+      console.error('Error updating role:', error);
+      throw error;
+    }
+  }
+
   async forgotPassword(email: string): Promise<void> {
     const user = await this.userModel.findOne({ email });
 
@@ -164,7 +270,6 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    // This is already correct, using proper expiresIn format
     const token = this.jwtService.sign({ id: user._id }, { expiresIn: 3600 });
     const resetLink = `http://localhost:3000/reset-password?token=${token}`;
 

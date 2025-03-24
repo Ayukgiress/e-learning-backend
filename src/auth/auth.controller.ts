@@ -20,10 +20,15 @@ import { CurrentUserDto } from './dto/current-user.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Response } from 'express';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateRoleDto } from './dto/update-role';
+import { JwtService } from '@nestjs/jwt';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly jwtService: JwtService  
+  ) {}
 
   // Public route for user registration
   @Post('/signup')
@@ -39,8 +44,14 @@ export class AuthController {
   @Post('/login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto): Promise<{ token: string }> {
-    const token = await this.authService.login(loginDto);
-    return { token };
+    try {
+      console.log('Login attempt with:', loginDto);
+      const token = await this.authService.login(loginDto);
+      return { token };
+    } catch (error) {
+      console.error('Login error in controller:', error);
+      throw error;
+    }
   }
 
   // Protected route to get current user information
@@ -54,35 +65,41 @@ export class AuthController {
   @Get('google')
   @UseGuards(AuthGuard('google'))
   googleAuth() {
-    // This is handled by Passport
-    // The initiation doesn't need any code in the method body
+  
   }
 
-  // Google callback endpoint
   @Get('google/callback')
 @UseGuards(AuthGuard('google'))
 async googleAuthRedirect(@Req() req, @Res() res) {
   try {
-    // Get the Google profile from request (added by Passport)
-    const profile = req.user;
+    if (!req.user) {
+      console.error('No profile in req.user - potential Passport strategy issue');
+      throw new UnauthorizedException('Authentication failed');
+    }
     
-    // Get JWT token from the AuthService
-    const token = await this.authService.validateUserByGoogle(profile);
+    console.log('Google callback received with profile');
     
-    // Use absolute URL with no trailing slash
+
+    const { token, needsRoleSelection } = await this.authService.validateUserByGoogleAndGetRoleInfo(req.user);
+    
+
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const baseUrl = frontendUrl.endsWith('/') ? frontendUrl.slice(0, -1) : frontendUrl;
     
-    // Construct a clean URL with the token
-    const redirectUrl = `${frontendUrl}/auth/callback?token=${token}`;
-    console.log('Redirecting to frontend:', redirectUrl);
+
+    const redirectUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}&needsRole=${needsRoleSelection}`;
     
-    // Perform the redirect
+    console.log('Redirecting to:', redirectUrl);
     return res.redirect(redirectUrl);
   } catch (error) {
-    console.error('Error in Google callback:', error);
-    return res.redirect('http://localhost:3000/login?error=AuthenticationFailed');
+    console.error('Google callback error:', error);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const errorMsg = encodeURIComponent(error.message || 'Authentication failed');
+    return res.redirect(`${frontendUrl}/login?error=google-auth-failed&message=${errorMsg}`);
   }
 }
+
+
   
   // Public route to request password reset
   @Post('/forgot-password')
@@ -122,4 +139,17 @@ async googleAuthRedirect(@Req() req, @Res() res) {
     await this.authService.changePassword(req.user.id, changePasswordDto);
     return { message: 'Password changed successfully.' };
   }
+
+  @Post('update-role')
+@UseGuards(JwtAuthGuard)
+async updateRole(@Body() updateRoleDto: UpdateRoleDto, @Request() req) {
+  const userId = req.user.id;
+  const { role } = updateRoleDto;
+  const result = await this.authService.updateRole(userId, role);
+  
+  return {
+    token: result.token,
+    message: result.message
+  };
+}
 }

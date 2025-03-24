@@ -12,8 +12,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       throw new Error('Missing Google OAuth credentials');
     }
 
-    // Make sure this is an absolute URL
-    const callbackUrl = 'http://localhost:5000/auth/google/callback';
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:5000/auth/google/callback';
     
     super({
       clientID: process.env.GOOGLE_CLIENT_ID,
@@ -24,13 +23,19 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   }
 
   async validate(
-    accessToken: string,
-    refreshToken: string,
-    profile: Profile,
+    accessToken: string, 
+    refreshToken: string, 
+    profile: Profile
   ): Promise<any> {
     try {
-      const token = await this.authService.validateUserByGoogle(profile);
-      return { token };
+      console.log('Google profile received:', { 
+        id: profile.id,
+        displayName: profile.displayName,
+        emails: profile.emails?.map(e => e.value) || []
+      });
+      
+      // Return the full profile to be used in the controller
+      return profile;
     } catch (error) {
       console.error('ERROR IN VALIDATE:', error.message);
       throw error;
