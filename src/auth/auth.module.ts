@@ -7,7 +7,6 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { GoogleStrategy } from './ google.strategy';
-import { JwtService } from '@nestjs/jwt';
 import { UserSchema } from './schemas/user.schema';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { EmailService } from './email.service'; 
@@ -22,13 +21,14 @@ import { EmailService } from './email.service';
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: config.get<string | number>('JWT_EXPIRES'),
+          expiresIn: config.get<string | number>('JWT_EXPIRES') || '24h',
         },
       }),
     }),
     MongooseModule.forFeature([{ name: 'User', schema: UserSchema }]),
   ],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, JwtAuthGuard, EmailService, JwtService], 
+  controllers: [AuthController], 
+  providers: [AuthService, JwtStrategy, GoogleStrategy, JwtAuthGuard, EmailService], // Remove JwtService from here
   exports: [JwtStrategy, PassportModule],
 })
 export class AuthModule {}

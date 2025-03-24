@@ -10,6 +10,10 @@ export class CreateCourseDto {
   @IsString()
   readonly description: string;
 
+  @IsOptional()
+  readonly courseImage?: Express.Multer.File;
+
+
   @IsNotEmpty()
   @IsString()
   readonly instructor: string;
@@ -17,4 +21,4 @@ export class CreateCourseDto {
   @IsOptional()
   @IsArray()
   readonly attachments?: string[];
-} 
+}

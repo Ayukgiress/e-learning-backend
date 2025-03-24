@@ -48,45 +48,39 @@ export class AuthService {
 
   async login(loginDto: LoginDto): Promise<string> {
     const { email, password } = loginDto;
-  
+
     const user = await this.userModel.findOne({ email });
-  
+
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
     }
-  
+
     const isPasswordMatched = await bcrypt.compare(password, user.password);
-  
+
     if (!isPasswordMatched) {
       throw new UnauthorizedException('Invalid email or password');
     }
-  
-    const token = this.jwtService.sign({ 
-      id: user._id.toString(),
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role
-    }, { expiresIn: '24h' }); 
-    
+
+    const token = await this.createToken(user._id.toString()); 
     return token; 
   }
 
-
-
-  async createToken(userId: string): Promise<string> {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    return this.jwtService.sign({ 
-      id: userId,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role
-    }, { expiresIn: '7d' }); 
+ async createToken(userId: string): Promise<string> {
+  const user = await this.userModel.findById(userId);
+  if (!user) {
+    throw new UnauthorizedException('User not found');
   }
+
+  console.log("Creating token with role:", user.role);
+  
+  return this.jwtService.sign(
+    { 
+      id: userId,
+      role: user.role 
+    }, 
+    { expiresIn: '24h' }
+  );
+}
 
   async getCurrentUser(userId: string): Promise<CurrentUserDto> {
     const user = await this.userModel.findById(userId).select('-password'); 
@@ -103,96 +97,168 @@ export class AuthService {
     };
   }
 
-  async validateUserByGoogleAndGetRoleInfo(profile: any): Promise<{ token: string, needsRoleSelection: boolean }> {
-    const token = await this.validateUserByGoogle(profile);
-    const decoded = this.jwtService.decode(token);
-    const needsRoleSelection = !decoded.role;
-    return { token, needsRoleSelection };
-  }
-
   async validateUserByGoogle(profile: any): Promise<string> {
     try {
+      console.log('VALIDATING GOOGLE USER...');
       
-      console.log('Raw Google profile:', JSON.stringify(profile, null, 2));
-      
-      const googleId = profile.id || 
-                      (profile._json && profile._json.sub) || 
-                      `google_${uuidv4()}`;
-      
-      console.log('Using Google ID:', googleId);
-      
-      // Check if user already exists with this Google ID
-      let user = await this.userModel.findOne({ googleId });
+      let user: User | null = await this.userModel.findOne({ googleId: profile.id });
       
       if (!user) {
-        console.log('No existing user with Google ID, checking email');
-        
         let email: string | null = null;
         
         if (profile.emails && profile.emails.length > 0) {
           email = profile.emails[0].value;
           console.log('Found email in emails array:', email);
-        } else if (profile._json && profile._json.email) {
-          email = profile._json.email; 
+        } 
+        else if (profile._json && profile._json.email) {
+          email = profile._json.email;
           console.log('Found email in _json:', email);
-        } else if (profile.email) {
+        }
+        else if (profile.email) {
           email = profile.email;
           console.log('Found email in direct property:', email);
-        } 
+        }
+        else {
+          for (const key in profile) {
+            if (typeof profile[key] === 'string' && key.toLowerCase().includes('email')) {
+              email = profile[key];
+              console.log(`Found email in property ${key}:`, email);
+              break;
+            }
+          }
+        }
         
         if (!email) {
-          console.error('*** WARNING: No email found in Google profile ***');
-          console.error('This will create a placeholder user that cannot be identified');
-          email = `google_user_${googleId}@placeholder.com`;
+          console.error('No email found in profile, using placeholder');
+          email = `google_user_${profile.id}@placeholder.com`;
         }
         
-        const existingUser = await this.userModel.findOne({ email });
-        if (existingUser) {
-          console.log('Found existing user with email:', email);
-          existingUser.googleId = googleId;
-          await existingUser.save();
-          return this.createToken(existingUser._id.toString());
-        }
+        const firstName = profile.name?.givenName || profile._json?.given_name || 'Google';
+        const lastName = profile.name?.familyName || profile._json?.family_name || 'User';
         
-        const firstName = 
-          (profile.name && profile.name.givenName) || 
-          (profile._json && profile._json.given_name) ||
-          (profile.given_name) ||
-          email.split('@')[0] || 
-          'Google';
-          
-        const lastName = 
-          (profile.name && profile.name.familyName) || 
-          (profile._json && profile._json.family_name) ||
-          (profile.family_name) ||
-          'User';
-        
-        console.log('Creating new user with:', { firstName, lastName, email, googleId });
+        console.log('Creating user with:', { firstName, lastName, email, googleId: profile.id });
         
         user = await this.userModel.create({
           firstName,
           lastName,
           email,
-          googleId,
+          googleId: profile.id,
           userId: uuidv4(),
+          role: 'student',
           isEmailVerified: true,
         });
         
-        console.log('New user created successfully:', user._id);
+        if (user) {
+          console.log('User created successfully:', user.email);
+        }
       } else {
-        console.log('Found existing user with Google ID:', user.email);
+        console.log('Found existing Google user:', user.email);
       }
       
-      // Check if user has a role
-      if (!user.role) {
-        console.log('User has no role, role selection will be required');
+      if (user) {
+        return this.createToken(user._id.toString());
       } else {
-        console.log('User already has role:', user.role);
+        throw new UnauthorizedException('User not found');
       }
-      
-      return this.createToken(user._id.toString());
     } catch (error) {
       console.error('Error in validateUserByGoogle:', error);
+      throw error;
+    }
+  }
+
+  async validateUserByGoogleAndGetRoleInfo(profile: any): Promise<{ token: string, needsRoleSelection: boolean }> {
+    try {
+      console.log('VALIDATING GOOGLE USER WITH ROLE INFO...');
+      
+      let user: User | null = await this.userModel.findOne({ googleId: profile.id });
+      let needsRoleSelection = false;
+      
+      if (!user) {
+        let email: string | null = null;
+        
+        if (profile.emails && profile.emails.length > 0) {
+          email = profile.emails[0].value;
+        } 
+        else if (profile._json && profile._json.email) {
+          email = profile._json.email;
+        }
+        else if (profile.email) {
+          email = profile.email;
+        }
+        else {
+          for (const key in profile) {
+            if (typeof profile[key] === 'string' && key.toLowerCase().includes('email')) {
+              email = profile[key];
+              break;
+            }
+          }
+        }
+        
+        if (!email) {
+          email = `google_user_${profile.id}@placeholder.com`;
+        }
+        
+        // Extract name information with defaults
+        const firstName = profile.name?.givenName || profile._json?.given_name || 'Google';
+        const lastName = profile.name?.familyName || profile._json?.family_name || 'User';
+        
+        console.log('Creating user with:', { firstName, lastName, email, googleId: profile.id });
+        
+        needsRoleSelection = true;
+        
+        user = await this.userModel.create({
+          firstName,
+          lastName,
+          email,
+          googleId: profile.id,
+          userId: uuidv4(),
+          role: null, 
+          isEmailVerified: true,
+        });
+      } else {
+        // Check if existing user has a role
+        needsRoleSelection = !user.role;
+        console.log('Found existing Google user:', user.email, 'needsRoleSelection:', needsRoleSelection);
+      }
+      
+      if (user) {
+        return {
+          token: await this.createToken(user._id.toString()),
+          needsRoleSelection
+        };
+      } else {
+        throw new UnauthorizedException('User not found');
+      }
+    } catch (error) {
+      console.error('Error in validateUserByGoogleAndGetRoleInfo:', error);
+      throw error;
+    }
+  }
+
+  async updateRole(userId: string, role: string): Promise<{ token: string, message: string }> {
+    try {
+      const user = await this.userModel.findById(userId);
+      
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      
+      const validRoles = ['student', 'instructor', 'admin'];
+      if (!validRoles.includes(role)) {
+        throw new UnauthorizedException('Invalid role');
+      }
+      
+      user.role = role;
+      await user.save();
+      
+      const newToken = await this.createToken(user._id.toString());
+      
+      return { 
+        token: newToken,
+        message: `Role updated to ${role} successfully` 
+      };
+    } catch (error) {
+      console.error('Error updating role:', error);
       throw error;
     }
   }
@@ -259,47 +325,5 @@ export class AuthService {
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedNewPassword;
     await user.save();
-  }
-
-  async updateRole(userId: string, role: string) {
-    const validRoles = ['student', 'instructor', 'admin'];
-
-    if (!validRoles.includes(role.toLowerCase())) {
-      throw new Error('Invalid role selection');
-    }
-
-    const user = await this.userModel.findById(userId);
-
-    if (!user) {
-      throw new Error('User not found');
-    }
-
-    user.role = role.toLowerCase();
-    const updatedUser = await user.save();
-
-    const payload = {
-      id: updatedUser.id,
-      email: updatedUser.email,
-      firstName: updatedUser.firstName,
-      lastName: updatedUser.lastName,
-      role: updatedUser.role,
-    };
-
-    const token = this.jwtService.sign(payload, {
-      secret: process.env.JWT_SECRET,
-      expiresIn: '24h',
-    });
-
-    return {
-      message: 'Role updated successfully',
-      token,
-      user: {
-        id: updatedUser.id,
-        email: updatedUser.email,
-        firstName: updatedUser.firstName,
-        lastName: updatedUser.lastName,
-        role: updatedUser.role,
-      },
-    };
   }
 }

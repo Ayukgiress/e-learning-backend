@@ -1,12 +1,25 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
-export type CourseDocument = HydratedDocument<Course>;
+export type CourseDocument = Course & Document;
 
-@Schema({ collection: 'courses' })
-export class Course {
+@Schema()
+export class Attachment {
+  @Prop({ type: Types.ObjectId, default: () => new Types.ObjectId() })
   _id: Types.ObjectId;
 
+  @Prop({ required: true })
+  url: string;
+
+  @Prop()
+  publicId: string;
+
+  @Prop()
+  fileName: string;
+}
+
+@Schema({ timestamps: true })
+export class Course {
   @Prop({ required: true })
   title: string;
 
@@ -14,16 +27,25 @@ export class Course {
   description: string;
 
   @Prop({ required: true })
-  instructor: string;
+  category: string;
 
-  @Prop({ type: [String], default: [] })
-  attachments: string[];
+  @Prop({ required: true, enum: ['beginner', 'intermediate', 'advanced'], default: 'beginner' })
+  level: string;
 
-  @Prop({ default: Date.now })
-  createdAt: Date;
+  @Prop({ default: 0 })
+  price: number;
 
-  @Prop({ default: Date.now })
-  updatedAt: Date;
+  @Prop()
+  imageUrl: string;
+
+  @Prop()
+  imagePublicId: string;
+
+  @Prop({ required: true })
+  createdBy: string;
+
+  @Prop({ type: [Attachment], default: [] })
+  attachments: Attachment[];
 }
 
 export const CourseSchema = SchemaFactory.createForClass(Course);

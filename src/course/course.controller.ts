@@ -9,15 +9,13 @@ import {
   UseInterceptors,
   UploadedFiles,
   BadRequestException,
+  UploadedFile,
 } from '@nestjs/common';
 import { CourseService } from './course.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { Course } from './schemas/course.schema';
-import { FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { Express } from 'express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { isValidObjectId } from 'mongoose';
 
 @Controller('courses')
@@ -25,21 +23,24 @@ export class CourseController {
   constructor(private readonly courseService: CourseService) {}
 
   @Post('/create-course')
-  @UseInterceptors(FilesInterceptor('attachments', 10, {
-    storage: diskStorage({
-      destination: './uploads',
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
-      },
-    }),
-  }))
+  @UseInterceptors(FilesInterceptor('attachments', 10))
   async create(
     @Body() createCourseDto: CreateCourseDto,
     @UploadedFiles() files: Express.Multer.File[],
   ): Promise<Course> {
-    const attachments = files && Array.isArray(files) ? files.map(file => file.path) : [];
-    return this.courseService.create({ ...createCourseDto, attachments });
+    return this.courseService.create(createCourseDto, files || []);
+  }
+
+  @Post('/upload-course-image/:id')
+  @UseInterceptors(FileInterceptor('image'))
+  async uploadCourseImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<Course> {
+    if (!isValidObjectId(id)) {
+      throw new BadRequestException('Invalid course ID format');
+    }
+    return this.courseService.updateCourseImage(id, file);
   }
 
   @Get()
@@ -56,15 +57,7 @@ export class CourseController {
   }
 
   @Put(':id')
-  @UseInterceptors(FilesInterceptor('attachments', 10, {
-    storage: diskStorage({
-      destination: './uploads',
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
-      },
-    }),
-  }))
+  @UseInterceptors(FilesInterceptor('attachments', 10))
   async update(
     @Param('id') id: string,
     @Body() updateCourseDto: UpdateCourseDto,
@@ -73,8 +66,7 @@ export class CourseController {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid course ID format');
     }
-    const attachments = files && Array.isArray(files) ? files.map(file => file.path) : [];
-    return this.courseService.update(id, { ...updateCourseDto, attachments });
+    return this.courseService.update(id, updateCourseDto, files || []);
   }
 
   @Delete(':id')
@@ -83,5 +75,16 @@ export class CourseController {
       throw new BadRequestException('Invalid course ID format');
     }
     return this.courseService.remove(id);
+  }
+  
+  @Delete(':courseId/attachments/:attachmentId')
+  async removeAttachment(
+    @Param('courseId') courseId: string,
+    @Param('attachmentId') attachmentId: string,
+  ): Promise<Course> {
+    if (!isValidObjectId(courseId) || !isValidObjectId(attachmentId)) {
+      throw new BadRequestException('Invalid ID format');
+    }
+    return this.courseService.removeAttachment(courseId, attachmentId);
   }
 }

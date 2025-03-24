@@ -44,8 +44,14 @@ export class AuthController {
   @Post('/login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto): Promise<{ token: string }> {
-    const token = await this.authService.login(loginDto);
-    return { token };
+    try {
+      console.log('Login attempt with:', loginDto);
+      const token = await this.authService.login(loginDto);
+      return { token };
+    } catch (error) {
+      console.error('Login error in controller:', error);
+      throw error;
+    }
   }
 
   // Protected route to get current user information
@@ -63,36 +69,36 @@ export class AuthController {
   }
 
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
-  async googleAuthRedirect(@Req() req, @Res() res) {
-    try {
-      console.log('Google callback received with profile structure:', 
-        Object.keys(req.user || {}).join(', '));
-      
-      console.log('AuthController instance:', this);
-      console.log('JwtService available:', !!this.jwtService);
-      
-      if (!req.user) {
-        console.error('No profile in vbhjhhjreq.user - potential Passport strategy issue');
-      } else if (!req.user.id && !req.user._json?.sub) {
-        console.error('Profile missing Google ID - this will create a random user');
-      }
-      
-      const { token, needsRoleSelection } = await this.authService.validateUserByGoogleAndGetRoleInfo(req.user);
-      
-      // Get the frontend URL
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const baseUrl = frontendUrl.endsWith('/') ? frontendUrl.slice(0, -1) : frontendUrl;
-      
-      const redirectUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}&needsRole=${needsRoleSelection}`;
-      
-      console.log('Redirecting to:', redirectUrl);
-      return res.redirect(redirectUrl);
-    } catch (error) {
-      console.error('Google callback error:', error);
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=google-auth-failed&message=${encodeURIComponent(error.message)}`);
+@UseGuards(AuthGuard('google'))
+async googleAuthRedirect(@Req() req, @Res() res) {
+  try {
+    if (!req.user) {
+      console.error('No profile in req.user - potential Passport strategy issue');
+      throw new UnauthorizedException('Authentication failed');
     }
+    
+    console.log('Google callback received with profile');
+    
+
+    const { token, needsRoleSelection } = await this.authService.validateUserByGoogleAndGetRoleInfo(req.user);
+    
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const baseUrl = frontendUrl.endsWith('/') ? frontendUrl.slice(0, -1) : frontendUrl;
+    
+
+    const redirectUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}&needsRole=${needsRoleSelection}`;
+    
+    console.log('Redirecting to:', redirectUrl);
+    return res.redirect(redirectUrl);
+  } catch (error) {
+    console.error('Google callback error:', error);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const errorMsg = encodeURIComponent(error.message || 'Authentication failed');
+    return res.redirect(`${frontendUrl}/login?error=google-auth-failed&message=${errorMsg}`);
   }
+}
+
 
   
   // Public route to request password reset
@@ -135,10 +141,15 @@ export class AuthController {
   }
 
   @Post('update-role')
-  @UseGuards(JwtAuthGuard)
-  async updateRole(@Body() updateRoleDto: UpdateRoleDto, @Request() req) {
-    const userId = req.user.id;
-    const { role } = updateRoleDto;
-    return this.authService.updateRole(userId, role);
-  }
+@UseGuards(JwtAuthGuard)
+async updateRole(@Body() updateRoleDto: UpdateRoleDto, @Request() req) {
+  const userId = req.user.id;
+  const { role } = updateRoleDto;
+  const result = await this.authService.updateRole(userId, role);
+  
+  return {
+    token: result.token,
+    message: result.message
+  };
+}
 }
